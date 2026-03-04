@@ -52,11 +52,18 @@ def parse_date_to_year_month(date_value) -> Optional[str]:
 
 def extract_month_from_filename(filename: str) -> Optional[str]:
     """Extract month from filename like '11월' or '12월'."""
+    from datetime import datetime
+
+    # "2025-12", "202512" 등 연도 포함 패턴 우선
+    match = re.search(r'(\d{4})[-_]?(\d{2})', filename)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}"
+
+    # "1월", "12월" 등 연도 없는 패턴 → 현재 연도
     match = re.search(r'(\d{1,2})월', filename)
     if match:
         month = int(match.group(1))
-        # Assume current year context (2025)
-        return f"2025-{month:02d}"
+        return f"{datetime.now().year}-{month:02d}"
     return None
 
 
@@ -109,6 +116,12 @@ def process_work_csv(files: List[LoadedFile]) -> Dict[str, Any]:
                     col_mapping['content_details'] = col
                 elif '계약 상 작업 연도/ 월' in col_str:
                     col_mapping['contract_month'] = col
+                elif '편집 내역-편집 종류' in col_str:
+                    col_mapping['edit_type'] = col
+
+            print(f"[youtube] col_mapping keys: {list(col_mapping.keys())}")
+            if 'edit_type' not in col_mapping:
+                print(f"[youtube] WARNING: '편집 내역-편집 종류' 컬럼 미감지. CSV 컬럼: {list(df.columns[:10])}...")
 
             # Forward-fill for Notion-style grouping
             fill_cols = ['id', 'clinic', 'video_type', 'contract_count', 'completed_count',
@@ -126,8 +139,6 @@ def process_work_csv(files: List[LoadedFile]) -> Dict[str, Any]:
 
                     clinic = str(first_row.get(col_mapping.get('clinic', ''), '')).strip()
                     video_type = str(first_row.get(col_mapping.get('video_type', ''), '')).strip()
-                    contract_count = pd.to_numeric(first_row.get(col_mapping.get('contract_count', ''), 0), errors='coerce') or 0
-                    completed_count = pd.to_numeric(first_row.get(col_mapping.get('completed_count', ''), 0), errors='coerce') or 0
                     status = str(first_row.get(col_mapping.get('status', ''), '')).strip()
 
                     # Get year_month from contract_month or upload dates
@@ -160,15 +171,30 @@ def process_work_csv(files: List[LoadedFile]) -> Dict[str, Any]:
                                     lead_time_days = (upload_dt - plan_dt).days
                                 break
 
+                    # 1행 컬럼값에서 계약 건수 / 완료 건수 직접 읽기
+                    raw_contract = first_row.get(col_mapping.get('contract_count', ''), 0)
+                    raw_completed = first_row.get(col_mapping.get('completed_count', ''), 0)
+                    try:
+                        contract_count = float(raw_contract) if pd.notna(raw_contract) else 0
+                    except (ValueError, TypeError):
+                        contract_count = 0
+                    try:
+                        completed_count = float(raw_completed) if pd.notna(raw_completed) else 0
+                    except (ValueError, TypeError):
+                        completed_count = 0
+
+                    is_completed = ('완료' in status)
+
                     if clinic and clinic != 'nan':
                         all_work.append({
                             'year_month': year_month,
                             'clinic': clinic,
                             'video_type': video_type,
-                            'contract_count': int(contract_count),
-                            'completed_count': int(completed_count),
+                            'contract_count': contract_count,
+                            'completed_count': completed_count,
                             'status': status,
-                            'lead_time_days': lead_time_days
+                            'lead_time_days': lead_time_days,
+                            'is_completed': is_completed,
                         })
 
                     # Collect individual video records
@@ -176,12 +202,15 @@ def process_work_csv(files: List[LoadedFile]) -> Dict[str, Any]:
                         for _, row in group_df.iterrows():
                             content = str(row.get(col_mapping['content_details'], '')).strip()
                             upload_date = row.get(col_mapping.get('upload_date', ''), '')
+                            edit_type = str(row.get(col_mapping.get('edit_type', ''), '')).strip() if 'edit_type' in col_mapping else ''
                             if content and content != 'nan':
                                 all_videos.append({
                                     'clinic': clinic,
                                     'title': content,
                                     'upload_date': str(upload_date) if pd.notna(upload_date) else None,
-                                    'year_month': parse_date_to_year_month(upload_date) or year_month
+                                    'year_month': parse_date_to_year_month(upload_date) or year_month,
+                                    'contract_month': year_month,
+                                    'edit_type': edit_type,
                                 })
 
         except Exception as e:
@@ -202,7 +231,7 @@ def process_work_csv(files: List[LoadedFile]) -> Dict[str, Any]:
                 'year_month': ym,
                 'contract_count': 0,
                 'completed_count': 0,
-                'lead_times': []
+                'lead_times': [],
             }
         monthly_data[ym]['contract_count'] += row['contract_count']
         monthly_data[ym]['completed_count'] += row['completed_count']
@@ -218,7 +247,7 @@ def process_work_csv(files: List[LoadedFile]) -> Dict[str, Any]:
             'contract_count': data['contract_count'],
             'completed_count': data['completed_count'],
             'lead_time_days': avg_lead_time,
-            'completion_rate': completion_rate
+            'completion_rate': completion_rate,
         })
 
     # 거래처명 수집 (불일치 감지용)
@@ -553,16 +582,44 @@ def process_youtube(files: List[LoadedFile]) -> Dict[str, Any]:
     content_result = process_content_db_xlsx(files)
     traffic_result = process_traffic_db_xlsx(files)
 
-    # Determine months from all sources
-    all_months = set()
+    # Determine months from all sources (work CSV 우선)
+    work_months = set()
     if work_result.get('monthly_summary'):
-        all_months.update([s['year_month'] for s in work_result['monthly_summary'] if s.get('year_month')])
+        work_months = {s['year_month'] for s in work_result['monthly_summary'] if s.get('year_month')}
 
-    # Add file months from content and traffic
+    # 콘텐츠/트래픽 파일 월 수집
+    file_months = set()
     if content_result.get('file_months'):
-        all_months.update(content_result['file_months'])
+        file_months.update(content_result['file_months'])
     if traffic_result.get('file_months'):
-        all_months.update(traffic_result['file_months'])
+        file_months.update(traffic_result['file_months'])
+
+    # 파일 월이 work 월과 연도가 안 맞으면 work 연도 기준으로 재조정
+    if work_months and file_months and not (file_months & work_months):
+        work_years = sorted({int(m.split('-')[0]) for m in work_months})
+        adjusted = set()
+        for fm in file_months:
+            mm = fm.split('-')[1]  # 월 부분만
+            for wy in work_years:
+                candidate = f"{wy}-{mm}"
+                if candidate in work_months:
+                    adjusted.add(candidate)
+                    break
+        if adjusted:
+            file_months = adjusted
+            # 콘텐츠/트래픽 결과의 file_month도 재조정
+            for result_dict in [content_result, traffic_result]:
+                for total in result_dict.get('monthly_totals', []):
+                    old_fm = total.get('file_month', '')
+                    if old_fm:
+                        mm = old_fm.split('-')[1]
+                        for wy in work_years:
+                            candidate = f"{wy}-{mm}"
+                            if candidate in work_months:
+                                total['file_month'] = candidate
+                                break
+
+    all_months = work_months | file_months
 
     sorted_months = sorted([m for m in all_months if m]) if all_months else []
     current_month = sorted_months[-1] if sorted_months else None
@@ -616,39 +673,47 @@ def process_youtube(files: List[LoadedFile]) -> Dict[str, Any]:
     if prev_completed > 0:
         growth_rate['completed'] = ((curr_completed - prev_completed) / prev_completed) * 100
 
-    # 영상 종류별 그룹화 (롱폼/숏폼)
+    # 영상 종류별 통계 (롱폼/일반 숏폼 등) — 1행 컬럼값 기준
     all_work = work_result.get('all_work', [])
 
     def get_video_type_stats(work_data, target_month):
-        """영상 종류별 계약/완료/이월 건수 계산"""
-        stats = {
-            '롱폼': {'contract': 0, 'completed': 0, 'carryover': 0},
-            '숏폼': {'contract': 0, 'completed': 0, 'carryover': 0},
-            '기타': {'contract': 0, 'completed': 0, 'carryover': 0}
-        }
-
+        """영상 종류별 계약/완료 건수 (1행 컬럼값 기준)"""
+        stats = {}
         for work in work_data:
             if work.get('year_month') != target_month:
                 continue
-
-            video_type = work.get('video_type', '')
-            category = classify_video_type(video_type)
-
-            contract = work.get('contract_count', 0)
-            completed = work.get('completed_count', 0)
-            carryover = max(0, contract - completed)
-
-            stats[category]['contract'] += contract
-            stats[category]['completed'] += completed
-            stats[category]['carryover'] += carryover
-
+            vt = str(work.get('video_type', '')).strip()
+            if not vt or vt == 'nan':
+                vt = '기타'
+            if vt not in stats:
+                stats[vt] = {'contract': 0, 'completed': 0}
+            stats[vt]['contract'] += work.get('contract_count', 0)
+            stats[vt]['completed'] += work.get('completed_count', 0)
         return stats
+
+    def build_video_list(video_records, target_month):
+        """영상 리스트 (편집 종류 == '영상', 계약 월 기준, 업로드 날짜순)"""
+        filtered = []
+        for v in video_records:
+            if v.get('contract_month') != target_month:
+                continue
+            if v.get('edit_type', '') != '영상':
+                continue
+            title = re.sub(r'^#\d+\s*', '', v.get('title', '')).strip()
+            if not title:
+                continue
+            filtered.append({
+                'title': title,
+                'upload_date': v.get('upload_date', ''),
+            })
+        filtered.sort(key=lambda x: x.get('upload_date') or '9999-99-99')
+        return filtered
 
     # 현재 월, 전월 영상 종류별 통계
     curr_video_type_stats = get_video_type_stats(all_work, current_month)
     prev_video_type_stats = get_video_type_stats(all_work, prev_month)
 
-    # 전체 이월 건수 계산
+    # 전체 건수 계산
     total_contract = sum(s['contract'] for s in curr_video_type_stats.values())
     total_completed = sum(s['completed'] for s in curr_video_type_stats.values())
     total_carryover = max(0, total_contract - total_completed)
@@ -656,6 +721,11 @@ def process_youtube(files: List[LoadedFile]) -> Dict[str, Any]:
     prev_total_contract = sum(s['contract'] for s in prev_video_type_stats.values())
     prev_total_completed = sum(s['completed'] for s in prev_video_type_stats.values())
     prev_total_carryover = max(0, prev_total_contract - prev_total_completed)
+
+    # 영상 리스트
+    all_video_records = work_result.get('all_videos', [])
+    curr_video_list = build_video_list(all_video_records, current_month)
+    prev_video_list = build_video_list(all_video_records, prev_month)
 
     # KPI
     work_summary = current_month_data.get('work', {})
@@ -707,9 +777,12 @@ def process_youtube(files: List[LoadedFile]) -> Dict[str, Any]:
         'prev_traffic_by_source': prev_traffic,  # 전월 트래픽 소스
         'work_summary': work_result.get('monthly_summary', []),
         'all_videos': work_result.get('all_videos', []),
-        # 영상 종류별 통계 테이블
+        # 영상 종류별 통계 (롱폼/일반 숏폼 등)
         'video_type_stats': curr_video_type_stats,
         'prev_video_type_stats': prev_video_type_stats,
+        # 영상 리스트 (편집 종류 == "영상"만, 업로드 날짜순)
+        'video_list': curr_video_list,
+        'prev_video_list': prev_video_list,
         # 월별 데이터 (상세)
         'monthly_top5': monthly_top5,
         'monthly_traffic': monthly_traffic

@@ -119,7 +119,7 @@ def initialize_session_state():
         for _mkey in _tcfg["modes"]:
             _sk = f"{_tkey}_{_mkey}_selections"
             if _sk not in st.session_state:
-                st.session_state[_sk] = []
+                st.session_state[_sk] = {}
         _dk = f"{_tkey}_proposal_done"
         if _dk not in st.session_state:
             st.session_state[_dk] = False
@@ -3056,11 +3056,23 @@ TEAM_PACKAGE_REGISTRY = {
                         "tasks": DESIGN_CARRYOVER_POLICY["homepage_10"]["tasks"],
                         "desc": DESIGN_CARRYOVER_POLICY["homepage_10"].get("desc", ""),
                     },
+                    "homepage_20": {
+                        "title": DESIGN_CARRYOVER_POLICY["homepage_20"]["title"],
+                        "price": DESIGN_CARRYOVER_POLICY["homepage_20"]["price"],
+                        "tasks": DESIGN_CARRYOVER_POLICY["homepage_20"]["tasks"],
+                        "desc": DESIGN_CARRYOVER_POLICY["homepage_20"].get("desc", ""),
+                    },
                     "draft_10": {
                         "title": DESIGN_CARRYOVER_POLICY["draft_10"]["title"],
                         "price": DESIGN_CARRYOVER_POLICY["draft_10"]["price"],
                         "tasks": DESIGN_CARRYOVER_POLICY["draft_10"]["tasks"],
                         "desc": DESIGN_CARRYOVER_POLICY["draft_10"].get("desc", ""),
+                    },
+                    "draft_20": {
+                        "title": DESIGN_CARRYOVER_POLICY["draft_20"]["title"],
+                        "price": DESIGN_CARRYOVER_POLICY["draft_20"]["price"],
+                        "tasks": DESIGN_CARRYOVER_POLICY["draft_20"]["tasks"],
+                        "desc": DESIGN_CARRYOVER_POLICY["draft_20"].get("desc", ""),
                     },
                 },
                 "source_tag": "design_carryover_policy",
@@ -3083,6 +3095,18 @@ TEAM_PACKAGE_REGISTRY = {
                         "tasks": DESIGN_PM_POLICY["homepage_10"]["tasks"],
                         "desc": DESIGN_PM_POLICY["homepage_10"].get("desc", ""),
                     },
+                    "draft_5": {
+                        "title": DESIGN_PM_POLICY["draft_5"]["title"],
+                        "price": DESIGN_PM_POLICY["draft_5"]["price"],
+                        "tasks": DESIGN_PM_POLICY["draft_5"]["tasks"],
+                        "desc": DESIGN_PM_POLICY["draft_5"].get("desc", ""),
+                    },
+                    "draft_10": {
+                        "title": DESIGN_PM_POLICY["draft_10"]["title"],
+                        "price": DESIGN_PM_POLICY["draft_10"]["price"],
+                        "tasks": DESIGN_PM_POLICY["draft_10"]["tasks"],
+                        "desc": DESIGN_PM_POLICY["draft_10"].get("desc", ""),
+                    },
                 },
                 "source_tag": "design_pm_policy",
                 "requires_carryover": False,
@@ -3090,7 +3114,7 @@ TEAM_PACKAGE_REGISTRY = {
         },
         "groups": [
             {"prefix": "homepage", "label": "홈페이지"},
-            {"prefix": "draft", "label": "드래프트"},
+            {"prefix": "draft", "label": "시안"},
         ],
     },
     "marketing": {
@@ -3893,11 +3917,16 @@ def _calc_team_budget(team_key: str, blog_counts: dict) -> dict:
         sel_key = f"{team_key}_{mode_key}_selections"
         policy_dict = mode_cfg.get("policy", {})
         is_co = bool(mode_cfg.get("requires_carryover"))
-        for pk in st.session_state.get(sel_key, []):
+        sel = st.session_state.get(sel_key, {})
+        if isinstance(sel, list):
+            sel = {k: 1 for k in sel}
+        for pk, qty in sel.items():
+            if qty <= 0:
+                continue
             pkg = policy_dict.get(pk)
             if not pkg:
                 continue
-            price = float(pkg.get("price", 0))
+            price = float(pkg.get("price", 0)) * qty
             if is_co:
                 carryover_used += price / 100_000
             else:
@@ -3980,20 +4009,9 @@ def _render_budget_gauge(team_key: str, blog_counts: dict, budget: dict):
 
 def _render_team_package_cards(team_key: str, mode_key: str, policy_dict: dict, groups: list, mode_cfg: dict = None):
     st.markdown(_PACKAGE_CARD_CSS, unsafe_allow_html=True)
-    config = TEAM_PACKAGE_REGISTRY.get(team_key, {})
-    team_color = config.get("color", "#6b7280")
-    team_label = config.get("label", team_key)
-    team_icon = config.get("icon", "🏢")
     sel_key = f"{team_key}_{mode_key}_selections"
-    current_sel = list(st.session_state.get(sel_key, []))
-    changed = False
+    current_sel = dict(st.session_state.get(sel_key, {}))
     is_carryover_mode = bool((mode_cfg or {}).get("requires_carryover"))
-
-    st.markdown(
-        f'<div class="pkg-team-hdr" style="color:{team_color}; background:{team_color}12;">'
-        f'{team_icon} {team_label}</div>',
-        unsafe_allow_html=True,
-    )
 
     for grp in groups:
         prefix = grp["prefix"]
@@ -4004,16 +4022,18 @@ def _render_team_package_cards(team_key: str, mode_key: str, policy_dict: dict, 
         cols = st.columns(2)
         for idx, (pk, pdata) in enumerate(pkgs.items()):
             with cols[idx % 2]:
-                is_sel = pk in current_sel
+                current_qty = current_sel.get(pk, 0)
+                is_sel = current_qty > 0
                 price = pdata.get("price", 0.0)
                 price_str = f"{int(price // 10000)}만원" if isinstance(price, (int, float)) and price > 0 else "-"
                 tasks = pdata.get("tasks", [])
                 task_chips = "".join(f'<span class="pkg-card-task">{t}</span>' for t in tasks)
-                # 카드별 비용 뱃지
+                # 카드별 비용 뱃지 (수량 반영)
                 cost_badge = ""
                 if isinstance(price, (int, float)) and price > 0:
+                    qty_mult = max(current_qty, 1)
                     if is_carryover_mode:
-                        units = price / 100_000
+                        units = price / 100_000 * qty_mult
                         cost_badge = (
                             f'<div style="font-size:10px;color:#92400e;background:#fef3c7;'
                             f'padding:2px 8px;border-radius:4px;margin-top:4px;display:inline-block;">'
@@ -4026,39 +4046,42 @@ def _render_team_package_cards(team_key: str, mode_key: str, policy_dict: dict, 
                                 badge_text = t
                                 break
                         if not badge_text:
-                            units = price / _BLOG_UNIT_KRW
+                            units = price / _BLOG_UNIT_KRW * qty_mult
                             badge_text = f"계약 {units:.2f}건 사용"
                         cost_badge = (
                             f'<div style="font-size:10px;color:#1e40af;background:#dbeafe;'
                             f'padding:2px 8px;border-radius:4px;margin-top:4px;display:inline-block;">'
                             f'{badge_text}</div>'
                         )
+                # 디자인팀: 제목에서 가격 텍스트 제거
+                display_title = pdata["title"]
+                if team_key == "design":
+                    display_title = re.sub(r'\s*\d+만원\s*', ' ', display_title).strip()
                 cls = "pkg-card sel" if is_sel else "pkg-card"
                 st.markdown(
                     f'<div class="{cls}">'
-                    f'  <div class="pkg-card-head"><span class="pkg-card-title">{pdata["title"]}</span><span class="pkg-card-price">{price_str}</span></div>'
+                    f'  <div class="pkg-card-head"><span class="pkg-card-title">{display_title}</span><span class="pkg-card-price">{price_str}</span></div>'
                     f'  <div class="pkg-card-tasks">{task_chips}</div>'
                     f'  {cost_badge}'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-                new_val = st.checkbox("선택" if not is_sel else "선택됨", value=is_sel, key=f"pkg_{team_key}_{mode_key}_{pk}")
-                if new_val != is_sel:
-                    if new_val:
-                        current_sel.append(pk)
-                    else:
-                        current_sel.remove(pk)
-                    changed = True
-
-    if changed:
-        dedup = []
-        seen = set()
-        for key in current_sel:
-            if key in seen:
-                continue
-            seen.add(key)
-            dedup.append(key)
-        st.session_state[sel_key] = dedup
+                qty_wkey = f"qty_{team_key}_{mode_key}_{pk}"
+                _sel_key_ref = sel_key
+                _pk_ref = pk
+                def _on_qty_change(_sk=_sel_key_ref, _p=_pk_ref, _qk=qty_wkey):
+                    new_qty = st.session_state.get(_qk, 0)
+                    sel = dict(st.session_state.get(_sk, {}))
+                    if new_qty > 0:
+                        sel[_p] = new_qty
+                    elif _p in sel:
+                        del sel[_p]
+                    st.session_state[_sk] = sel
+                st.number_input(
+                    "수량", min_value=0, value=current_qty, step=1,
+                    key=qty_wkey, on_change=_on_qty_change,
+                    label_visibility="collapsed",
+                )
 
 
 def _confirm_team_package_selection(team_key: str, config: dict, blog_counts: dict):
@@ -4073,11 +4096,15 @@ def _confirm_team_package_selection(team_key: str, config: dict, blog_counts: di
     for mode_key, mode_cfg in modes.items():
         sel_key = f"{team_key}_{mode_key}_selections"
         policy_dict = mode_cfg.get("policy", {})
-        selected_keys = st.session_state.get(sel_key, [])
-        if not selected_keys:
+        sel = st.session_state.get(sel_key, {})
+        if isinstance(sel, list):
+            sel = {k: 1 for k in sel}
+        if not sel:
             continue
         source_tag = mode_cfg.get("source_tag", f"{team_key}_{mode_key}_policy")
-        for pk in selected_keys:
+        for pk, qty in sel.items():
+            if qty <= 0:
+                continue
             pkg = policy_dict.get(pk)
             if not pkg:
                 continue
@@ -4107,6 +4134,7 @@ def _confirm_team_package_selection(team_key: str, config: dict, blog_counts: di
                 "price": pkg.get("price", 0),
                 "mode_type": mode_key,
                 "count_label": count_label,
+                "quantity": qty,
             })
     if not items:
         st.warning("패키지를 선택해 주세요.")
@@ -4156,7 +4184,7 @@ def _render_team_proposal_flow(team_key: str, filtered_results):
         if st.button("초기화 후 다시 고르기", key=f"pkg_{team_key}_reset"):
             st.session_state[done_key] = False
             for mk in modes:
-                st.session_state[f"{team_key}_{mk}_selections"] = []
+                st.session_state[f"{team_key}_{mk}_selections"] = {}
             all_items = _normalize_product_items(st.session_state.action_plan_items)
             all_items[team_key] = []
             st.session_state.action_plan_items = all_items
@@ -4165,19 +4193,24 @@ def _render_team_proposal_flow(team_key: str, filtered_results):
 
     for mode_key, mode_cfg in modes.items():
         sel_key = f"{team_key}_{mode_key}_selections"
-        sel_count = len(st.session_state.get(sel_key, []))
-        expander_label = f'{mode_cfg.get("icon", "🔖")} {mode_cfg.get("label", mode_key)}'
+        sel = st.session_state.get(sel_key, {})
+        if isinstance(sel, list):
+            sel = {k: 1 for k in sel}
+        sel_count = sum(1 for v in sel.values() if v > 0)
+        total_qty_mode = sum(v for v in sel.values() if v > 0)
+        expander_label = f'{mode_cfg.get("icon", "🔖")} [{team_label}] {mode_cfg.get("label", mode_key)}'
         if sel_count > 0:
-            expander_label += f"  ({sel_count}개 선택)"
-        with st.expander(expander_label, expanded=False):
+            expander_label += f"  ({total_qty_mode}건 선택)"
+        should_expand = sel_count > 0
+        with st.expander(expander_label, expanded=should_expand):
             if mode_cfg.get("requires_carryover") and carryover_count <= 0:
                 st.info("이월 데이터가 없으면 이월 기반 제안은 비활성화됩니다.")
                 continue
             # 모드별 차감 트래커
             if mode_cfg.get("requires_carryover"):
                 co_used = sum(
-                    float((mode_cfg.get("policy", {}).get(pk) or {}).get("price", 0)) / 100_000
-                    for pk in st.session_state.get(sel_key, [])
+                    float((mode_cfg.get("policy", {}).get(pk) or {}).get("price", 0)) / 100_000 * qty
+                    for pk, qty in sel.items() if qty > 0
                 )
                 co_remain = max(carryover_cap_units - co_used, 0)
                 co_color = _gauge_color(co_used / carryover_cap_units if carryover_cap_units > 0 else 0)
@@ -4189,8 +4222,8 @@ def _render_team_proposal_flow(team_key: str, filtered_results):
                 )
             else:
                 mode_krw = sum(
-                    float((mode_cfg.get("policy", {}).get(pk) or {}).get("price", 0))
-                    for pk in st.session_state.get(sel_key, [])
+                    float((mode_cfg.get("policy", {}).get(pk) or {}).get("price", 0)) * qty
+                    for pk, qty in sel.items() if qty > 0
                 )
                 if mode_krw > 0:
                     mode_units = mode_krw / _BLOG_UNIT_KRW
@@ -4201,19 +4234,25 @@ def _render_team_proposal_flow(team_key: str, filtered_results):
                     )
             _render_team_package_cards(team_key, mode_key, mode_cfg.get("policy", {}), groups, mode_cfg)
 
-    total = sum(len(st.session_state.get(f"{team_key}_{mk}_selections", [])) for mk in modes)
+    total_qty = 0
     total_krw = 0
     for mk, mc in modes.items():
-        for pk in st.session_state.get(f"{team_key}_{mk}_selections", []):
-            total_krw += float((mc.get("policy", {}).get(pk) or {}).get("price", 0))
+        mk_sel = st.session_state.get(f"{team_key}_{mk}_selections", {})
+        if isinstance(mk_sel, list):
+            mk_sel = {k: 1 for k in mk_sel}
+        for pk, qty in mk_sel.items():
+            if qty <= 0:
+                continue
+            total_qty += qty
+            total_krw += float((mc.get("policy", {}).get(pk) or {}).get("price", 0)) * qty
     price_str = f", {int(total_krw/10000)}만원" if total_krw > 0 else ""
-    btn_label = f"Step 2: 선택 완료 ({total}개 선택{price_str})" if total > 0 else "Step 2: 선택 완료 (상품을 먼저 선택해주세요)"
+    btn_label = f"Step 2: 선택 완료 ({total_qty}건 선택{price_str})" if total_qty > 0 else "Step 2: 선택 완료 (상품을 먼저 선택해주세요)"
     if st.button(
         btn_label,
         key=f"pkg_{team_key}_confirm",
         use_container_width=True,
         type="primary",
-        disabled=(total == 0),
+        disabled=(total_qty == 0),
     ):
         _confirm_team_package_selection(team_key, config, blog_counts)
 

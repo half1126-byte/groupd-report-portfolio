@@ -577,59 +577,88 @@ HTML_TEMPLATE = """
             </div>
             {% endif %}
 
-            <!-- YouTube: Video Type Distribution -->
-            {% if dept.video_type_distribution %}
+            <!-- YouTube: Video Type Breakdown (영상 종류별 제작 건수) -->
+            {% if dept.curr_video_type_breakdown %}
             <div class="mb-6">
                 <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-                    <i data-lucide="pie-chart" class="w-4 h-4 text-slate-400"></i> 영상 종류별 제작 분포
+                    <i data-lucide="layers" class="w-4 h-4 text-slate-400"></i> 영상 종류별 제작 건수
                 </h3>
                 <div class="grid grid-cols-2 gap-4">
-                    <!-- Prev -->
                     <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
                         <p class="text-xs font-bold text-slate-400 uppercase mb-3">{{ dept.prev_month }}</p>
-                        {% if dept.video_type_distribution.prev.total > 0 %}
-                        <div class="flex h-6 rounded-full overflow-hidden mb-2">
-                            {% if dept.video_type_distribution.prev.longform.pct > 0 %}
-                            <div class="bg-indigo-500 flex items-center justify-center" style="width: {{ dept.video_type_distribution.prev.longform.pct }}%;">
-                                <span class="text-[9px] text-white font-bold">롱폼</span>
+                        {% if dept.prev_video_type_breakdown %}
+                        <div class="space-y-2">
+                            {% for item in dept.prev_video_type_breakdown %}
+                            <div class="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-100">
+                                <span class="text-xs font-medium text-slate-600">{{ item.type }}</span>
+                                <span class="text-sm font-bold text-slate-700">{{ item.count }}<span class="text-[10px] text-slate-400 ml-0.5">건</span></span>
                             </div>
-                            {% endif %}
-                            {% if dept.video_type_distribution.prev.shortform.pct > 0 %}
-                            <div class="bg-pink-400 flex items-center justify-center" style="width: {{ dept.video_type_distribution.prev.shortform.pct }}%;">
-                                <span class="text-[9px] text-white font-bold">숏폼</span>
-                            </div>
-                            {% endif %}
-                        </div>
-                        <div class="flex gap-4 text-[10px] text-slate-500">
-                            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-indigo-500 rounded-full"></span> 롱폼 {{ dept.video_type_distribution.prev.longform.count }}건</span>
-                            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-pink-400 rounded-full"></span> 숏폼 {{ dept.video_type_distribution.prev.shortform.count }}건</span>
+                            {% endfor %}
                         </div>
                         {% else %}
                         <p class="text-xs text-slate-400 italic">데이터 없음</p>
                         {% endif %}
                     </div>
-                    <!-- Curr -->
                     <div class="bg-blue-50/30 p-4 rounded-xl border border-blue-100">
                         <p class="text-xs font-bold text-blue-500 uppercase mb-3">{{ dept.curr_month }}</p>
-                        {% if dept.video_type_distribution.curr.total > 0 %}
-                        <div class="flex h-6 rounded-full overflow-hidden mb-2">
-                            {% if dept.video_type_distribution.curr.longform.pct > 0 %}
-                            <div class="bg-indigo-500 flex items-center justify-center" style="width: {{ dept.video_type_distribution.curr.longform.pct }}%;">
-                                <span class="text-[9px] text-white font-bold">롱폼</span>
+                        <div class="space-y-2">
+                            {% for item in dept.curr_video_type_breakdown %}
+                            <div class="flex justify-between items-center bg-white p-2.5 rounded-lg border border-blue-100 shadow-sm">
+                                <span class="text-xs font-medium text-slate-700">{{ item.type }}</span>
+                                <span class="text-sm font-bold text-blue-600">{{ item.count }}<span class="text-[10px] text-slate-400 ml-0.5">건</span></span>
                             </div>
-                            {% endif %}
-                            {% if dept.video_type_distribution.curr.shortform.pct > 0 %}
-                            <div class="bg-pink-400 flex items-center justify-center" style="width: {{ dept.video_type_distribution.curr.shortform.pct }}%;">
-                                <span class="text-[9px] text-white font-bold">숏폼</span>
-                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- YouTube: Video List (영상 리스트) -->
+            {% if dept.video_list or dept.prev_video_list %}
+            <div class="mb-6">
+                <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                    <i data-lucide="film" class="w-4 h-4 text-slate-400"></i> 영상 리스트
+                </h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                        <div class="bg-slate-100 px-4 py-2 flex justify-between items-center">
+                            <p class="text-[10px] font-bold text-slate-500 uppercase">{{ dept.prev_month }}</p>
+                            {% if dept.prev_video_list %}
+                            <p class="text-[10px] text-slate-400">{{ dept.prev_video_list|length }}건</p>
                             {% endif %}
                         </div>
-                        <div class="flex gap-4 text-[10px] text-slate-500">
-                            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-indigo-500 rounded-full"></span> 롱폼 {{ dept.video_type_distribution.curr.longform.count }}건</span>
-                            <span class="flex items-center gap-1"><span class="w-2 h-2 bg-pink-400 rounded-full"></span> 숏폼 {{ dept.video_type_distribution.curr.shortform.count }}건</span>
+                        {% if dept.prev_video_list %}
+                        <div class="divide-y divide-slate-100">
+                            {% for video in dept.prev_video_list %}
+                            <div class="px-4 py-2 flex items-center justify-between">
+                                <span class="text-xs text-slate-700 flex-1">{{ video.title }}</span>
+                                <span class="text-[10px] text-slate-400 shrink-0 ml-2">{{ video.upload_date[:10] if video.upload_date else '-' }}</span>
+                            </div>
+                            {% endfor %}
                         </div>
                         {% else %}
-                        <p class="text-xs text-slate-400 italic">데이터 없음</p>
+                        <p class="px-4 py-3 text-xs text-slate-400 italic">데이터 없음</p>
+                        {% endif %}
+                    </div>
+                    <div class="bg-blue-50/30 rounded-xl border border-blue-100 overflow-hidden">
+                        <div class="bg-blue-50 px-4 py-2 flex justify-between items-center">
+                            <p class="text-[10px] font-bold text-blue-500 uppercase">{{ dept.curr_month }}</p>
+                            {% if dept.video_list %}
+                            <p class="text-[10px] text-blue-400">{{ dept.video_list|length }}건</p>
+                            {% endif %}
+                        </div>
+                        {% if dept.video_list %}
+                        <div class="divide-y divide-blue-50">
+                            {% for video in dept.video_list %}
+                            <div class="px-4 py-2 flex items-center justify-between">
+                                <span class="text-xs text-slate-700 flex-1">{{ video.title }}</span>
+                                <span class="text-[10px] text-blue-400 shrink-0 ml-2">{{ video.upload_date[:10] if video.upload_date else '-' }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p class="px-4 py-3 text-xs text-slate-400 italic">데이터 없음</p>
                         {% endif %}
                     </div>
                 </div>
@@ -1537,11 +1566,6 @@ def prepare_youtube_data(result: Dict[str, Any]) -> Dict[str, Any]:
     video_type_stats = tables.get('video_type_stats', {})
     prev_video_type_stats = tables.get('prev_video_type_stats', {})
 
-    longform_stats = video_type_stats.get('롱폼', {})
-    shortform_stats = video_type_stats.get('숏폼', {})
-    prev_longform_stats = prev_video_type_stats.get('롱폼', {})
-    prev_shortform_stats = prev_video_type_stats.get('숏폼', {})
-
     # Channel metrics - 채널 성과 (3개 지표)
     # 총 시청 시간은 소수점 없이 정수로 표시
     prev_watch_time = int(prev_content.get('total_watch_time', 0))
@@ -1559,10 +1583,10 @@ def prepare_youtube_data(result: Dict[str, Any]) -> Dict[str, Any]:
     ]
 
     # Production metrics - 제작 성과 (계약/완료)
-    prev_contract = kpi.get('prev_contract_count', 0)
-    prev_completed = kpi.get('prev_completed_count', 0)
-    curr_contract = kpi.get('contract_count', 0)
-    curr_completed = kpi.get('completed_count', 0)
+    prev_contract = int(kpi.get('prev_contract_count', 0))
+    prev_completed = int(kpi.get('prev_completed_count', 0))
+    curr_contract = int(kpi.get('contract_count', 0))
+    curr_completed = int(kpi.get('completed_count', 0))
 
     prev_production_metrics = [
         {'icon': '📝', 'label': '계약 건수', 'value': prev_contract, 'unit': '건', 'icon_box_class': 'purple', 'bg_class': 'bg-gray'},
@@ -1608,29 +1632,12 @@ def prepare_youtube_data(result: Dict[str, Any]) -> Dict[str, Any]:
             'no_prev_data_msg': '데이터 없음' if not prev_traffic else None,
         })
 
-    # Video type distribution (영상 종류별 분포)
-    # 전월
-    prev_longform_completed = prev_longform_stats.get('completed', 0)
-    prev_shortform_completed = prev_shortform_stats.get('completed', 0)
-    prev_total_completed = prev_longform_completed + prev_shortform_completed
+    # 영상 종류별 breakdown (롱폼, 일반 숏폼 등)
+    def format_video_type_breakdown(stats):
+        return [{'type': vt, 'count': int(data.get('contract', 0))} for vt, data in sorted(stats.items())]
 
-    # 당월
-    curr_longform_completed = longform_stats.get('completed', 0)
-    curr_shortform_completed = shortform_stats.get('completed', 0)
-    curr_total_completed = curr_longform_completed + curr_shortform_completed
-
-    video_type_distribution = {
-        'prev': {
-            'longform': {'count': prev_longform_completed, 'pct': round((prev_longform_completed / prev_total_completed * 100), 1) if prev_total_completed > 0 else 0},
-            'shortform': {'count': prev_shortform_completed, 'pct': round((prev_shortform_completed / prev_total_completed * 100), 1) if prev_total_completed > 0 else 0},
-            'total': prev_total_completed
-        },
-        'curr': {
-            'longform': {'count': curr_longform_completed, 'pct': round((curr_longform_completed / curr_total_completed * 100), 1) if curr_total_completed > 0 else 0},
-            'shortform': {'count': curr_shortform_completed, 'pct': round((curr_shortform_completed / curr_total_completed * 100), 1) if curr_total_completed > 0 else 0},
-            'total': curr_total_completed
-        }
-    }
+    curr_video_type_breakdown = format_video_type_breakdown(video_type_stats)
+    prev_video_type_breakdown = format_video_type_breakdown(prev_video_type_stats)
 
     return {
         'prev_month': prev_month,
@@ -1640,7 +1647,10 @@ def prepare_youtube_data(result: Dict[str, Any]) -> Dict[str, Any]:
         'prev_production_metrics': prev_production_metrics,  # 제작 성과
         'curr_production_metrics': curr_production_metrics,
         'top5_sections': top3_sections,  # TOP3 sections (기존 구조 유지)
-        'video_type_distribution': video_type_distribution,  # 영상 종류별 분포
+        'curr_video_type_breakdown': curr_video_type_breakdown,  # 영상 종류별 제작 건수
+        'prev_video_type_breakdown': prev_video_type_breakdown,
+        'video_list': tables.get('video_list', []),  # 영상 리스트
+        'prev_video_list': tables.get('prev_video_list', []),
     }
 
 
